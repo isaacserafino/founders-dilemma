@@ -20,6 +20,7 @@ import {
   flushEngagementsOnExit,
   createSession,
   completeSession,
+  completeSessionOnExit,
 } from "@/lib/tracking";
 import { supabase } from "@/lib/supabase";
 import type { Idea, SwipeDirection, EngagementAccum } from "@/types";
@@ -43,15 +44,40 @@ export default function GameScreen() {
   const [loading, setLoading] = useState(true);
   const [alreadyPlayed, setAlreadyPlayed] = useState(false);
   const [drawerIdea, setDrawerIdea] = useState<Idea | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [showSyncing, setShowSyncing] = useState(false);
 
   // Refs so event handlers always see the current value without re-registering
   const voterIdRef   = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const accumsRef    = useRef<Map<string, EngagementAccum>>(new Map());
+  const likedIdeasRef = useRef<
+    { slug: string; title: string; direction: "right" | "up" }[]
+  >([]);
   const swipedCount  = useRef(0);
 
+  const trackSyncPromise = useCallback(<T,>(work: Promise<T>) => {
+    setPendingSyncCount((count) => count + 1);
+    void work.finally(() => {
+      setPendingSyncCount((count) => Math.max(0, count - 1));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (pendingSyncCount === 0) {
+      setShowSyncing(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowSyncing(true);
+    }, 100);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pendingSyncCount]);
+
   // Stable identity for add/removeEventListener (avoids orphaned listeners if deps churn).
-  const pageHideFlushRef = useRef(() => {
+  const visibilityHiddenFlushRef = useRef(() => {
     const voterId = voterIdRef.current;
     if (!voterId) return;
     flushEngagementsOnExit(voterId, Array.from(accumsRef.current.values()));
@@ -92,6 +118,7 @@ export default function GameScreen() {
       } catch {
         /* ignore quota / private mode */
       }
+      likedIdeasRef.current = [];
 
       setIdeas(shuffle(rows as Idea[]));
       setLoading(false);
@@ -105,11 +132,20 @@ export default function GameScreen() {
     return () => { mounted = false; };
   }, []);
 
-  // ── pagehide flush (keepalive fetch; same unload semantics as sendBeacon) ─
+  // ── Flush when tab becomes hidden (keepalive fetch) ───────────────────────
   useLayoutEffect(() => {
-    const handler = pageHideFlushRef.current;
-    window.addEventListener("pagehide", handler);
-    return () => window.removeEventListener("pagehide", handler);
+    const flushOnHidden = visibilityHiddenFlushRef.current;
+    const handler = () => {
+      if (document.visibilityState === "hidden") {
+        flushOnHidden();
+        const sessionId = sessionIdRef.current;
+        if (sessionId) {
+          completeSessionOnExit(sessionId, swipedCount.current);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
   // ── Swipe handler ────────────────────────────────────────────────────────
@@ -120,21 +156,20 @@ export default function GameScreen() {
 
       // Fire-and-forget vote insert
       if (voterId) {
-        recordVote(voterId, idea.id, direction);
+        trackSyncPromise(recordVote(voterId, idea.id, direction));
       }
 
       // Accumulate for results screen
       if (direction === "right" || direction === "up") {
-        const liked: { slug: string; title: string; direction: "right" | "up" }[] = [];
+        likedIdeasRef.current.push({ slug: idea.slug, title: idea.title, direction });
         try {
-          const raw = sessionStorage.getItem(LIKED_KEY);
-          if (raw) liked.push(...JSON.parse(raw));
-        } catch { /* ignore */ }
-        liked.push({ slug: idea.slug, title: idea.title, direction });
-        sessionStorage.setItem(LIKED_KEY, JSON.stringify(liked));
+          sessionStorage.setItem(LIKED_KEY, JSON.stringify(likedIdeasRef.current));
+        } catch {
+          /* ignore quota / private mode */
+        }
       }
     },
-    []
+    [trackSyncPromise]
   );
 
   // ── Drawer open ──────────────────────────────────────────────────────────
@@ -177,10 +212,10 @@ export default function GameScreen() {
 
       // Flush directly (drawer close is a natural write point)
       if (voterId) {
-        flushEngagement(voterId, updated);
+        trackSyncPromise(flushEngagement(voterId, updated));
       }
     },
-    [drawerIdea]
+    [drawerIdea, trackSyncPromise]
   );
 
   // ── All cards done ───────────────────────────────────────────────────────
@@ -243,7 +278,11 @@ export default function GameScreen() {
         <span className="text-sm font-semibold text-white/40 tracking-wide uppercase">
           Founder&apos;s Dilemma
         </span>
-        <span className="text-xs text-white/30">Swipe to vote</span>
+        {showSyncing ? (
+          <span className="text-xs text-amber-300/90">Syncing…</span>
+        ) : (
+          <span className="text-xs text-white/30">Swipe to vote</span>
+        )}
       </header>
 
       {/* Card area */}

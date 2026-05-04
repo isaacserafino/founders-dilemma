@@ -5,22 +5,53 @@
 import { supabase } from "./supabase";
 import type { SwipeDirection, EngagementAccum } from "@/types";
 
+const RETRY_DELAYS_MS = [0, 350, 1000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryOperation(
+  operationName: string,
+  operation: () => Promise<{ error: { message: string } | null }>
+): Promise<boolean> {
+  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
+    // During page-hide/unload, delayed retries are unlikely to run reliably.
+    if (attempt > 0 && typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return false;
+    }
+
+    if (RETRY_DELAYS_MS[attempt] > 0) {
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+
+    const { error } = await operation();
+    if (!error) return true;
+
+    const isLastAttempt = attempt === RETRY_DELAYS_MS.length - 1;
+    if (isLastAttempt) {
+      console.error(`[tracking] ${operationName} failed`, error.message);
+      return false;
+    }
+  }
+
+  return false;
+}
+
 // ─── Votes ────────────────────────────────────────────────────────────────────
 
 export async function recordVote(
   voterId: string,
   ideaId: string,
   direction: SwipeDirection
-): Promise<void> {
-  const { error } = await supabase.from("votes").insert({
-    voter_id: voterId,
-    idea_id: ideaId,
-    direction,
-  });
-
-  if (error) {
-    console.error("[tracking] vote insert failed", error.message);
-  }
+): Promise<boolean> {
+  return retryOperation("vote insert", async () =>
+    supabase.from("votes").insert({
+      voter_id: voterId,
+      idea_id: ideaId,
+      direction,
+    })
+  );
 }
 
 // ─── Engagements ──────────────────────────────────────────────────────────────
@@ -29,29 +60,27 @@ export async function recordVote(
 export async function flushEngagement(
   voterId: string,
   accum: EngagementAccum
-): Promise<void> {
-  if (accum.watchSeconds === 0 && accum.drawerOpens === 0) return;
+): Promise<boolean> {
+  if (accum.watchSeconds === 0 && accum.drawerOpens === 0) return true;
 
-  const { error } = await supabase.from("engagements").upsert(
-    {
-      voter_id: voterId,
-      idea_id: accum.ideaId,
-      watch_seconds: accum.watchSeconds,
-      drawer_opens: accum.drawerOpens,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "voter_id,idea_id" }
+  return retryOperation("engagement upsert", async () =>
+    supabase.from("engagements").upsert(
+      {
+        voter_id: voterId,
+        idea_id: accum.ideaId,
+        watch_seconds: accum.watchSeconds,
+        drawer_opens: accum.drawerOpens,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "voter_id,idea_id" }
+    )
   );
-
-  if (error) {
-    console.error("[tracking] engagement upsert failed", error.message);
-  }
 }
 
 /**
- * Best-effort flush on pagehide. Uses `fetch` with `keepalive` (not `sendBeacon`)
- * so we can send Supabase REST auth headers and upsert `Prefer`; `sendBeacon`
- * cannot set custom headers.
+ * Best-effort flush used during page lifecycle transitions. Uses `fetch` with
+ * `keepalive` (not `sendBeacon`) so we can send Supabase REST auth headers and
+ * upsert `Prefer`; `sendBeacon` cannot set custom headers.
  */
 export function flushEngagementsOnExit(
   voterId: string,
@@ -92,31 +121,24 @@ export function flushEngagementsOnExit(
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
 export async function createSession(voterId: string): Promise<string | null> {
-  const now = new Date().toISOString();
-
-  // Close abandoned sessions so we do not accumulate open rows per voter.
-  await supabase
-    .from("sessions")
-    .update({ completed_at: now })
-    .eq("voter_id", voterId)
-    .is("completed_at", null);
-
-  const { data, error } = await supabase
-    .from("sessions")
-    .insert({
-      voter_id: voterId,
-      user_agent: navigator.userAgent,
-      screen_width: screen.width,
-      screen_height: screen.height,
-    })
-    .select("id")
-    .single();
+  const { data, error } = await supabase.rpc("create_voter_session", {
+    p_voter_id: voterId,
+    p_user_agent: navigator.userAgent,
+    p_screen_width: screen.width,
+    p_screen_height: screen.height,
+  });
 
   if (error) {
-    console.error("[tracking] session create failed", error.message);
+    console.error("[tracking] create_voter_session failed", error.message);
     return null;
   }
-  return data.id;
+
+  if (typeof data !== "string") {
+    console.error("[tracking] create_voter_session returned invalid id");
+    return null;
+  }
+
+  return data;
 }
 
 export async function completeSession(
@@ -131,4 +153,34 @@ export async function completeSession(
   if (error) {
     console.error("[tracking] complete_voter_session failed", error.message);
   }
+}
+
+/**
+ * Best-effort session completion during page lifecycle transitions.
+ * Uses `keepalive` so the request can still be sent while the page unloads.
+ */
+export function completeSessionOnExit(
+  sessionId: string,
+  ideasSeen: number
+): void {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) return;
+
+  const url = `${supabaseUrl}/rest/v1/rpc/complete_voter_session`;
+  const payload = JSON.stringify({
+    p_session_id: sessionId,
+    p_ideas_seen: ideasSeen,
+  });
+
+  void fetch(url, {
+    method: "POST",
+    keepalive: true,
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      "Content-Type": "application/json",
+    },
+    body: payload,
+  });
 }

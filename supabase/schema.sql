@@ -156,6 +156,37 @@ $$;
 revoke all on function public.get_or_create_voter_by_fp(text, jsonb) from public;
 grant execute on function public.get_or_create_voter_by_fp(text, jsonb) to anon;
 
+-- Create a fresh session atomically after closing abandoned open sessions.
+create or replace function public.create_voter_session(
+  p_voter_id uuid,
+  p_user_agent text,
+  p_screen_width int,
+  p_screen_height int
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_session_id uuid;
+begin
+  update sessions
+  set completed_at = now()
+  where voter_id = p_voter_id
+    and completed_at is null;
+
+  insert into sessions (voter_id, user_agent, screen_width, screen_height)
+  values (p_voter_id, p_user_agent, p_screen_width, p_screen_height)
+  returning id into v_session_id;
+
+  return v_session_id;
+end;
+$$;
+
+revoke all on function public.create_voter_session(uuid, text, int, int) from public;
+grant execute on function public.create_voter_session(uuid, text, int, int) to anon;
+
 -- Mark session complete; if full deck, lock voter to one playthrough.
 create or replace function public.complete_voter_session(
   p_session_id uuid,
