@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --max-card-width: 420px;
+}
+
+/* Prevent pull-to-refresh and bouncy overscroll on mobile */
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+/* Prevent text selection while dragging cards */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Bottom sheet backdrop */
+.drawer-backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* Swipe hint overlays */
+.swipe-like {
+  background: linear-gradient(135deg, #22c55e22 0%, #22c55e00 100%);
+  border: 2px solid #22c55e;
+}
+
+.swipe-nope {
+  background: linear-gradient(225deg, #ef444422 0%, #ef444400 100%);
+  border: 2px solid #ef4444;
+}
+
+.swipe-super {
+  background: linear-gradient(180deg, #a855f722 0%, #a855f700 100%);
+  border: 2px solid #a855f7;
+}
