@@ -3,8 +3,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-function requirePublicEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_ANON_KEY"): string {
-  const raw = process.env[name];
+function requirePublicEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_ANON_KEY", raw: string | undefined): string {
   const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) {
     throw new Error(
@@ -15,7 +14,8 @@ function requirePublicEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABA
   return value;
 }
 
-const supabaseUrl = requirePublicEnv("NEXT_PUBLIC_SUPABASE_URL");
-const supabaseAnonKey = requirePublicEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+// Use direct member access so Next can inline NEXT_PUBLIC_* in client bundles.
+const supabaseUrl = requirePublicEnv("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = requirePublicEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
