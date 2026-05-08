@@ -162,6 +162,7 @@ export default function VideoDrawer({ idea, onClose }: VideoDrawerProps) {
                     controls
                     playsInline
                     autoPlay
+                    muted
                     preload="metadata"
                     poster={idea.poster_url ?? undefined}
                   />
