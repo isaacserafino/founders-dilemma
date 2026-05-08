@@ -128,7 +128,7 @@ export default function VideoDrawer({ idea, onClose }: VideoDrawerProps) {
             {/* Modal — capped at the app's mobile-first width so the
                 aspect-video player doesn't inflate on desktop. */}
             <motion.div
-              className="pointer-events-auto w-full max-w-[420px] max-h-[90dvh] flex flex-col bg-[#12121a] rounded-3xl shadow-2xl overflow-hidden"
+              className="pointer-events-auto w-full max-w-[420px] max-h-[90dvh] min-h-0 flex flex-col bg-[#12121a] rounded-3xl shadow-2xl overflow-hidden"
               initial={{ y: 40, scale: 0.96 }}
               animate={{ y: 0, scale: 1 }}
               exit={{ y: 40, scale: 0.96 }}
@@ -149,11 +149,12 @@ export default function VideoDrawer({ idea, onClose }: VideoDrawerProps) {
                 </button>
               </div>
 
-              {/* Video — portrait 9:16, capped at 50dvh tall so the modal
-                  (header + video + description + CTA) always fits in
-                  90dvh. `object-contain` keeps the video's true aspect; the
-                  container letterboxes horizontally on wider modals. */}
-              <div className="relative w-full bg-black aspect-[9/16] max-h-[50dvh] shrink-0">
+              {/* Video — portrait 9:16, capped so header + video + description
+                  + CTA fit in 90dvh; a lower cap leaves more room for the
+                  description panel above the fold. `object-contain` keeps the
+                  video's true aspect; the container letterboxes horizontally
+                  on wider modals. */}
+              <div className="relative w-full bg-black aspect-[9/16] max-h-[40dvh] shrink-0">
                 {idea.video_url ? (
                   <video
                     ref={videoRef}
@@ -175,7 +176,7 @@ export default function VideoDrawer({ idea, onClose }: VideoDrawerProps) {
 
               {/* Description */}
               {idea.description && (
-                <div className="px-5 py-5 overflow-y-auto">
+                <div className="flex-1 min-h-0 px-5 py-5 overflow-y-auto">
                   <p className="text-sm text-white/70 leading-relaxed">{idea.description}</p>
                 </div>
               )}
