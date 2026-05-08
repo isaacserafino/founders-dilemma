@@ -11,11 +11,18 @@ export type VoterBootstrap = {
   voterId: string;
   /** True after this voter has finished a full deck (server-side). */
   playthroughCompleted: boolean;
+  /**
+   * Positive votes (right + up) this voter has already cast in their current
+   * playthrough. Used to seed the picks-remaining budget so a resumed session
+   * doesn't grant a fresh allotment.
+   */
+  positiveVoteCount: number;
 };
 
 type RpcVoterRow = {
   id: string;
   playthrough_completed?: boolean;
+  positive_vote_count?: number;
 };
 
 function parseRpcPayload(raw: unknown): RpcVoterRow | null {
@@ -23,12 +30,18 @@ function parseRpcPayload(raw: unknown): RpcVoterRow | null {
   const o = raw as Record<string, unknown>;
   const id = o.id;
   if (typeof id !== "string") return null;
+  const rawCount = o.positive_vote_count;
+  const positiveCount =
+    typeof rawCount === "number" && Number.isFinite(rawCount) && rawCount >= 0
+      ? Math.floor(rawCount)
+      : 0;
   return {
     id,
     playthrough_completed:
       typeof o.playthrough_completed === "boolean"
         ? o.playthrough_completed
         : Boolean(o.playthrough_completed),
+    positive_vote_count: positiveCount,
   };
 }
 
@@ -62,6 +75,7 @@ export async function getOrCreateVoter(): Promise<VoterBootstrap> {
     return {
       voterId: row.id,
       playthroughCompleted: Boolean(row.playthrough_completed),
+      positiveVoteCount: row.positive_vote_count ?? 0,
     };
   }
 
@@ -71,12 +85,12 @@ export async function getOrCreateVoter(): Promise<VoterBootstrap> {
 
   const existing = localStorage.getItem(VOTER_KEY);
   if (existing) {
-    return { voterId: existing, playthroughCompleted: false };
+    return { voterId: existing, playthroughCompleted: false, positiveVoteCount: 0 };
   }
 
   const fallback = crypto.randomUUID();
   localStorage.setItem(VOTER_KEY, fallback);
-  return { voterId: fallback, playthroughCompleted: false };
+  return { voterId: fallback, playthroughCompleted: false, positiveVoteCount: 0 };
 }
 
 /** @deprecated Prefer getOrCreateVoter when you need playthrough state. */

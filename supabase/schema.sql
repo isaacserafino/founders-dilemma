@@ -55,6 +55,41 @@ create table if not exists votes (
 );
 
 -- ────────────────────────────────────────────────────────────
+-- Cap positive votes (right + up combined) per voter.
+-- Each voter picks at most 3 favorites across the whole deck.
+-- ────────────────────────────────────────────────────────────
+-- SECURITY DEFINER + explicit search_path so the count below is not subject
+-- to anon's RLS on `votes` (anon has no SELECT policy on votes by design).
+create or replace function public.enforce_positive_vote_budget()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_existing int;
+begin
+  if new.direction in ('right', 'up') then
+    select count(*) into v_existing
+    from votes
+    where voter_id = new.voter_id
+      and direction in ('right', 'up');
+
+    if v_existing >= 3 then
+      raise exception 'positive vote budget exceeded for voter %', new.voter_id
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_enforce_positive_vote_budget on votes;
+create trigger trg_enforce_positive_vote_budget
+  before insert on votes
+  for each row execute function public.enforce_positive_vote_budget();
+
+-- ────────────────────────────────────────────────────────────
 -- engagements
 -- Tracks how long a voter watched the video for each idea.
 -- Upserted when drawer closes (or on pagehide).
@@ -119,6 +154,7 @@ as $$
 declare
   v_id uuid;
   v_done boolean;
+  v_positive int := 0;
 begin
   if p_hash is null or char_length(p_hash) < 32 then
     raise exception 'invalid fingerprint hash';
@@ -131,14 +167,26 @@ begin
   limit 1;
 
   if v_id is not null then
-    return jsonb_build_object('id', v_id, 'playthrough_completed', v_done);
+    select count(*) into v_positive
+    from votes
+    where voter_id = v_id and direction in ('right', 'up');
+
+    return jsonb_build_object(
+      'id', v_id,
+      'playthrough_completed', v_done,
+      'positive_vote_count', v_positive
+    );
   end if;
 
   insert into voters (metadata, device_fingerprint_hash)
   values (p_metadata, p_hash)
   returning id into v_id;
 
-  return jsonb_build_object('id', v_id, 'playthrough_completed', false);
+  return jsonb_build_object(
+    'id', v_id,
+    'playthrough_completed', false,
+    'positive_vote_count', 0
+  );
 exception
   when unique_violation then
     select id, (playthrough_completed_at is not null)
@@ -149,7 +197,16 @@ exception
     if v_id is null then
       raise;
     end if;
-    return jsonb_build_object('id', v_id, 'playthrough_completed', coalesce(v_done, false));
+
+    select count(*) into v_positive
+    from votes
+    where voter_id = v_id and direction in ('right', 'up');
+
+    return jsonb_build_object(
+      'id', v_id,
+      'playthrough_completed', coalesce(v_done, false),
+      'positive_vote_count', v_positive
+    );
 end;
 $$;
 

@@ -2,7 +2,6 @@
 // Copyright (C) 2026 isaacserafino — https://github.com/isaacserafino/founders-dilemma
 "use client";
 
-import { useRef } from "react";
 import Image from "next/image";
 import {
   motion,
@@ -23,6 +22,8 @@ interface SwipeCardProps {
   idea: Idea;
   stackIndex: number; // 0 = top card, 1 = second, 2 = third…
   totalCards: number;
+  /** Positive votes the voter can still cast; 0 disables right/up commit. */
+  picksRemaining: number;
   onSwipe: (direction: SwipeDirection) => void;
   onOpenDrawer: () => void;
 }
@@ -31,14 +32,24 @@ export default function SwipeCard({
   idea,
   stackIndex,
   totalCards,
+  picksRemaining,
   onSwipe,
   onOpenDrawer,
 }: SwipeCardProps) {
   const isTop = stackIndex === 0;
+  const outOfPicks = picksRemaining === 0;
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const controls = useAnimation();
+
+  function springToCenter() {
+    controls.start({
+      x: 0,
+      y: 0,
+      transition: { type: "spring", stiffness: 300, damping: 20 },
+    });
+  }
 
   // Rotate based on horizontal drag (natural throw feel)
   const rotate = useTransform(x, [-INPUT_RANGE, 0, INPUT_RANGE], [-ROTATION_RANGE, 0, ROTATION_RANGE]);
@@ -72,19 +83,24 @@ export default function SwipeCard({
     const absX = Math.abs(offset.x);
     const absY = Math.abs(offset.y);
 
-    // Up swipe (super-like) takes precedence if it clears threshold
-    if (offset.y < -SWIPE_THRESHOLD && absY > absX) {
-      flyOut("up");
+    const wantsLove = offset.y < -SWIPE_THRESHOLD && absY > absX;
+    const wantsLike = offset.x > SWIPE_THRESHOLD || velocity.x > 500;
+    const wantsPass = offset.x < -SWIPE_THRESHOLD || velocity.x < -500;
+
+    // Out of picks: refuse to commit positive votes, but allow passes through.
+    if (outOfPicks && (wantsLove || wantsLike)) {
+      springToCenter();
       return;
     }
 
-    if (offset.x > SWIPE_THRESHOLD || velocity.x > 500) {
+    if (wantsLove) {
+      flyOut("up");
+    } else if (wantsLike) {
       flyOut("right");
-    } else if (offset.x < -SWIPE_THRESHOLD || velocity.x < -500) {
+    } else if (wantsPass) {
       flyOut("left");
     } else {
-      // Spring back to center
-      controls.start({ x: 0, y: 0, transition: { type: "spring", stiffness: 300, damping: 20 } });
+      springToCenter();
     }
   }
 
@@ -152,12 +168,20 @@ export default function SwipeCard({
         {isTop && (
           <>
             <motion.div
-              className="absolute inset-0 rounded-3xl swipe-like pointer-events-none"
+              className={`absolute inset-0 rounded-3xl pointer-events-none ${
+                outOfPicks ? "swipe-nope" : "swipe-like"
+              }`}
               style={{ opacity: likeOpacity }}
             >
-              <span className="absolute top-8 left-6 text-green-400 font-black text-3xl tracking-widest rotate-[-12deg]">
-                LIKE
-              </span>
+              {outOfPicks ? (
+                <span className="absolute top-8 left-6 right-6 text-red-400 font-black text-2xl tracking-widest rotate-[-8deg]">
+                  OUT OF PICKS
+                </span>
+              ) : (
+                <span className="absolute top-8 left-6 text-green-400 font-black text-3xl tracking-widest rotate-[-12deg]">
+                  LIKE
+                </span>
+              )}
             </motion.div>
 
             <motion.div
@@ -170,12 +194,20 @@ export default function SwipeCard({
             </motion.div>
 
             <motion.div
-              className="absolute inset-0 rounded-3xl swipe-super pointer-events-none"
+              className={`absolute inset-0 rounded-3xl pointer-events-none ${
+                outOfPicks ? "swipe-nope" : "swipe-super"
+              }`}
               style={{ opacity: superOpacity }}
             >
-              <span className="absolute top-8 left-1/2 -translate-x-1/2 text-brand-400 font-black text-3xl tracking-widest">
-                LOVE
-              </span>
+              {outOfPicks ? (
+                <span className="absolute top-8 left-6 right-6 text-center text-red-400 font-black text-2xl tracking-widest">
+                  OUT OF PICKS
+                </span>
+              ) : (
+                <span className="absolute top-8 left-1/2 -translate-x-1/2 text-brand-400 font-black text-3xl tracking-widest">
+                  LOVE
+                </span>
+              )}
             </motion.div>
           </>
         )}

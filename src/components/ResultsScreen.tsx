@@ -5,9 +5,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { POSITIVE_VOTE_BUDGET } from "@/lib/constants";
 
 const LIKED_KEY = "fd_liked_ideas";
-const LIKED_LABELS: Record<string, string> = {};
 
 interface ResultRow {
   slug: string;
@@ -55,7 +55,13 @@ export default function ResultsScreen() {
         <div className="text-center flex flex-col gap-2">
           <span className="text-5xl">🏁</span>
           <h1 className="text-3xl font-bold tracking-tight">Your verdict</h1>
-          <p className="text-sm text-white/50">Here&apos;s what resonated with you</p>
+          <p className="text-sm text-white/50">
+            {results.length === 0
+              ? "Here's what resonated with you"
+              : `Your ${results.length} of ${POSITIVE_VOTE_BUDGET} pick${
+                  results.length === 1 ? "" : "s"
+                }`}
+          </p>
         </div>
 
         {/* Loved */}

@@ -1,6 +1,6 @@
 # Founder's Dilemma
 
-Mobile-first swipe-to-vote app. Seven startup ideas, Tinder-style cards, full engagement tracking.
+Mobile-first swipe-to-vote app. Seven startup ideas, Tinder-style cards, full engagement tracking. Each voter has a budget of **3 positive votes** (Like + Love combined) to spend across the deck.
 
 ## Stack
 
@@ -46,7 +46,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Gesture | Meaning |
 |---|---|
-| Swipe right | Like ✅ |
-| Swipe left | Pass ❌ |
-| Swipe up | Love ❤️‍🔥 |
+| Swipe right | Like ✅ (counts toward your 3-pick budget) |
+| Swipe left | Pass ❌ (unlimited) |
+| Swipe up | Love ❤️‍🔥 (counts toward your 3-pick budget) |
 | Tap "Watch pitch" | Opens video drawer |
+
+Once you've spent all 3 positive votes, right/up swipes spring back to center — only Pass is allowed for the rest of the deck. Server-enforced via a `BEFORE INSERT` trigger on `votes`.

@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -23,6 +24,7 @@ import {
   completeSessionOnExit,
 } from "@/lib/tracking";
 import { supabase } from "@/lib/supabase";
+import { POSITIVE_VOTE_BUDGET } from "@/lib/constants";
 import type { Idea, SwipeDirection, EngagementAccum } from "@/types";
 
 const LIKED_KEY = "fd_liked_ideas";
@@ -46,6 +48,12 @@ export default function GameScreen() {
   const [drawerIdea, setDrawerIdea] = useState<Idea | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [showSyncing, setShowSyncing] = useState(false);
+  const [picksUsed, setPicksUsed] = useState(0);
+
+  const picksRemaining = useMemo(
+    () => Math.max(0, POSITIVE_VOTE_BUDGET - picksUsed),
+    [picksUsed]
+  );
 
   // Refs so event handlers always see the current value without re-registering
   const voterIdRef   = useRef<string | null>(null);
@@ -89,7 +97,8 @@ export default function GameScreen() {
 
     async function init() {
       // 1. Ensure voter exists (one full playthrough per voter, server-enforced)
-      const { voterId, playthroughCompleted } = await getOrCreateVoter();
+      const { voterId, playthroughCompleted, positiveVoteCount } =
+        await getOrCreateVoter();
       voterIdRef.current = voterId;
 
       if (playthroughCompleted) {
@@ -97,6 +106,10 @@ export default function GameScreen() {
         setLoading(false);
         return;
       }
+
+      // Seed the budget counter so a resumed deck doesn't grant a fresh
+      // allotment (server trigger is the ultimate gate).
+      if (mounted) setPicksUsed(positiveVoteCount);
 
       // 2. Load ideas
       const { data: rows, error } = await supabase
@@ -161,6 +174,7 @@ export default function GameScreen() {
 
       // Accumulate for results screen
       if (direction === "right" || direction === "up") {
+        setPicksUsed((n) => n + 1);
         likedIdeasRef.current.push({ slug: idea.slug, title: idea.title, direction });
         try {
           sessionStorage.setItem(LIKED_KEY, JSON.stringify(likedIdeasRef.current));
@@ -281,7 +295,7 @@ export default function GameScreen() {
         {showSyncing ? (
           <span className="text-xs text-amber-300/90">Syncing…</span>
         ) : (
-          <span className="text-xs text-white/30">Swipe to vote</span>
+          <PicksRemainingBadge remaining={picksRemaining} />
         )}
       </header>
 
@@ -289,6 +303,7 @@ export default function GameScreen() {
       <div className="flex-1 relative px-5 pb-16">
         <CardStack
           ideas={ideas}
+          picksRemaining={picksRemaining}
           onSwipe={handleSwipe}
           onOpenDrawer={handleOpenDrawer}
           onDone={handleDone}
@@ -298,8 +313,18 @@ export default function GameScreen() {
       {/* Action hint bar */}
       <footer className="flex justify-around items-center px-8 pb-10 pt-2 shrink-0">
         <HintButton label="Pass" emoji="👈" color="text-red-400" />
-        <HintButton label="Love" emoji="☝️" color="text-brand-400" />
-        <HintButton label="Like" emoji="👉" color="text-green-400" />
+        <HintButton
+          label="Love"
+          emoji="☝️"
+          color="text-brand-400"
+          dimmed={picksRemaining === 0}
+        />
+        <HintButton
+          label="Like"
+          emoji="👉"
+          color="text-green-400"
+          dimmed={picksRemaining === 0}
+        />
       </footer>
 
       {/* Video drawer (portal-style, above everything) */}
@@ -312,15 +337,39 @@ function HintButton({
   label,
   emoji,
   color,
+  dimmed = false,
 }: {
   label: string;
   emoji: string;
   color: string;
+  dimmed?: boolean;
 }) {
   return (
-    <div className={`flex flex-col items-center gap-1 ${color}`}>
+    <div
+      className={`flex flex-col items-center gap-1 transition-opacity ${color} ${
+        dimmed ? "opacity-25 grayscale" : ""
+      }`}
+    >
       <span className="text-2xl">{emoji}</span>
       <span className="text-xs font-medium opacity-70">{label}</span>
     </div>
+  );
+}
+
+function PicksRemainingBadge({ remaining }: { remaining: number }) {
+  if (remaining === 0) {
+    return (
+      <span className="text-xs font-medium text-red-300/90">
+        Out of picks · pass to finish
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-white/50">
+      <span className="font-semibold text-brand-300">{remaining}</span>
+      <span className="text-white/40">
+        {" "}/ {POSITIVE_VOTE_BUDGET} pick{remaining === 1 ? "" : "s"} left
+      </span>
+    </span>
   );
 }

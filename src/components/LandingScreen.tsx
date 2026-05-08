@@ -4,6 +4,7 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { POSITIVE_VOTE_BUDGET } from "@/lib/constants";
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -46,8 +47,11 @@ export default function LandingScreen() {
             </span>
           </h1>
           <p className="text-base text-white/60 leading-relaxed">
-            Seven startup ideas. Swipe right on the ones that could define your
-            company.
+            Seven startup ideas. Pick the{" "}
+            <span className="font-semibold text-brand-300">
+              {POSITIVE_VOTE_BUDGET}
+            </span>{" "}
+            that could define your company.
           </p>
         </div>
 
@@ -63,6 +67,11 @@ export default function LandingScreen() {
             <span className="text-lg">☝️</span> Love
           </span>
         </div>
+
+        <p className="text-xs text-white/40 -mt-4">
+          You have {POSITIVE_VOTE_BUDGET} positive votes — Like and Love
+          combined. Spend them wisely.
+        </p>
 
         {/* CTA */}
         <motion.button

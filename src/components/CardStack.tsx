@@ -9,6 +9,8 @@ import type { Idea, SwipeDirection } from "@/types";
 
 interface CardStackProps {
   ideas: Idea[];
+  /** Positive votes (right + up) the voter can still cast across the deck. */
+  picksRemaining: number;
   onSwipe: (idea: Idea, direction: SwipeDirection) => void;
   onOpenDrawer: (idea: Idea) => void;
   onDone: () => void;
@@ -19,6 +21,7 @@ const VISIBLE_STACK_DEPTH = 3;
 
 export default function CardStack({
   ideas,
+  picksRemaining,
   onSwipe,
   onOpenDrawer,
   onDone,
@@ -49,6 +52,7 @@ export default function CardStack({
             idea={idea}
             stackIndex={stackIndex}
             totalCards={visible.length}
+            picksRemaining={picksRemaining}
             onSwipe={(dir) => {
               if (stackIndex === 0) handleSwipe(idea, dir);
             }}
