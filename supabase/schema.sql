@@ -310,6 +310,7 @@ revoke all on function public.add_engagement_deltas(uuid, jsonb) from public;
 grant execute on function public.add_engagement_deltas(uuid, jsonb) to anon;
 
 -- ideas: anyone can read (cards need title, poster, video)
+drop policy if exists "public read ideas" on ideas;
 create policy "public read ideas"
   on ideas for select
   to anon
