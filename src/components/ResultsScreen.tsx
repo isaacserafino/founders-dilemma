@@ -84,7 +84,7 @@ export default function ResultsScreen() {
         {/* CTA */}
         <div className="flex flex-col gap-3 mt-4">
           <a
-            href="https://example.com/learn-more"
+            href="https://www.serafinosoftware.com/p/about-us.html"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full py-4 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 font-semibold text-lg text-center shadow-lg shadow-brand-700/30"
