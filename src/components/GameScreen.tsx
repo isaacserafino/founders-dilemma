@@ -10,7 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import CardStack from "./CardStack";
 import VideoDrawer from "./VideoDrawer";
@@ -29,6 +28,12 @@ import type { Idea, SwipeDirection, EngagementAccum } from "@/types";
 
 const LIKED_KEY = "fd_liked_ideas";
 
+interface LikedIdea {
+  slug: string;
+  title: string;
+  direction: "right" | "up";
+}
+
 /** Fisher-Yates shuffle */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -44,7 +49,6 @@ export default function GameScreen() {
 
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
-  const [alreadyPlayed, setAlreadyPlayed] = useState(false);
   const [drawerIdea, setDrawerIdea] = useState<Idea | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [showSyncing, setShowSyncing] = useState(false);
@@ -59,10 +63,23 @@ export default function GameScreen() {
   const voterIdRef   = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const accumsRef    = useRef<Map<string, EngagementAccum>>(new Map());
-  const likedIdeasRef = useRef<
-    { slug: string; title: string; direction: "right" | "up" }[]
-  >([]);
+  // Keyed by idea.id so we can add/replace/remove on revote without dupes.
+  const likedIdeasRef = useRef<Map<string, LikedIdea>>(new Map());
+  // Prior positive votes (right or up) — seeded from the bootstrap RPC so a
+  // replaying voter's picks-remaining budget reflects votes already on file.
+  const positiveVotedIdsRef = useRef<Set<string>>(new Set());
   const swipedCount  = useRef(0);
+
+  const persistLikedIdeas = useCallback(() => {
+    try {
+      sessionStorage.setItem(
+        LIKED_KEY,
+        JSON.stringify(Array.from(likedIdeasRef.current.values()))
+      );
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, []);
 
   const trackSyncPromise = useCallback(<T,>(work: Promise<T>) => {
     setPendingSyncCount((count) => count + 1);
@@ -96,20 +113,19 @@ export default function GameScreen() {
     let mounted = true;
 
     async function init() {
-      // 1. Ensure voter exists (one full playthrough per voter, server-enforced)
-      const { voterId, playthroughCompleted, positiveVoteCount } =
-        await getOrCreateVoter();
+      // 1. Ensure voter exists. Voters may replay and change votes; the
+      //    3-positive cap is enforced server-side.
+      const { voterId, positiveVotes } = await getOrCreateVoter();
       voterIdRef.current = voterId;
 
-      if (playthroughCompleted) {
-        setAlreadyPlayed(true);
-        setLoading(false);
-        return;
-      }
-
-      // Seed the budget counter so a resumed deck doesn't grant a fresh
-      // allotment (server trigger is the ultimate gate).
-      if (mounted) setPicksUsed(positiveVoteCount);
+      const priorIds = new Set(positiveVotes.map((v) => v.ideaId));
+      const priorDirByIdeaId = new Map(
+        positiveVotes.map((v) => [v.ideaId, v.direction] as const)
+      );
+      positiveVotedIdsRef.current = priorIds;
+      // Seed the budget counter so the voter can't acquire a fresh allotment
+      // by replaying (server trigger is the ultimate gate).
+      if (mounted) setPicksUsed(priorIds.size);
 
       // 2. Load ideas
       const { data: rows, error } = await supabase
@@ -125,15 +141,26 @@ export default function GameScreen() {
         return;
       }
 
-      // Fresh deck: likes are only for this run (sessionStorage survives reloads).
-      try {
-        sessionStorage.removeItem(LIKED_KEY);
-      } catch {
-        /* ignore quota / private mode */
-      }
-      likedIdeasRef.current = [];
+      const ideaRows = rows as Idea[];
 
-      setIdeas(shuffle(rows as Idea[]));
+      // Pre-populate the liked map from prior positives so the results
+      // screen reflects the latest registered state if the voter exits
+      // without finishing this replay.
+      const initialLiked = new Map<string, LikedIdea>();
+      for (const idea of ideaRows) {
+        const direction = priorDirByIdeaId.get(idea.id);
+        if (direction) {
+          initialLiked.set(idea.id, {
+            slug: idea.slug,
+            title: idea.title,
+            direction,
+          });
+        }
+      }
+      likedIdeasRef.current = initialLiked;
+      persistLikedIdeas();
+
+      setIdeas(shuffle(ideaRows));
       setLoading(false);
 
       // 3. Start session
@@ -167,23 +194,35 @@ export default function GameScreen() {
       const voterId = voterIdRef.current;
       swipedCount.current += 1;
 
-      // Fire-and-forget vote insert
+      // Fire-and-forget vote upsert. The server trigger will reject any
+      // upsert that would push positive vote count past 3.
       if (voterId) {
         trackSyncPromise(recordVote(voterId, idea.id, direction));
       }
 
-      // Accumulate for results screen
-      if (direction === "right" || direction === "up") {
-        setPicksUsed((n) => n + 1);
-        likedIdeasRef.current.push({ slug: idea.slug, title: idea.title, direction });
-        try {
-          sessionStorage.setItem(LIKED_KEY, JSON.stringify(likedIdeasRef.current));
-        } catch {
-          /* ignore quota / private mode */
-        }
+      const wasPositive = positiveVotedIdsRef.current.has(idea.id);
+      const isPositive = direction === "right" || direction === "up";
+
+      if (isPositive && !wasPositive) {
+        positiveVotedIdsRef.current.add(idea.id);
+        setPicksUsed((n) => Math.min(POSITIVE_VOTE_BUDGET, n + 1));
+      } else if (!isPositive && wasPositive) {
+        positiveVotedIdsRef.current.delete(idea.id);
+        setPicksUsed((n) => Math.max(0, n - 1));
       }
+
+      if (isPositive) {
+        likedIdeasRef.current.set(idea.id, {
+          slug: idea.slug,
+          title: idea.title,
+          direction,
+        });
+      } else {
+        likedIdeasRef.current.delete(idea.id);
+      }
+      persistLikedIdeas();
     },
-    [trackSyncPromise]
+    [persistLikedIdeas, trackSyncPromise]
   );
 
   // ── Drawer open ──────────────────────────────────────────────────────────
@@ -265,22 +304,6 @@ export default function GameScreen() {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-[#0a0a0f]">
         <p className="text-white/40 text-sm">No ideas loaded yet. Check your Supabase setup.</p>
-      </div>
-    );
-  }
-
-  if (alreadyPlayed) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-6 min-h-dvh bg-[#0a0a0f] px-6 text-center">
-        <p className="text-white/80 text-lg max-w-sm">
-          You have already completed the deck. Each visitor gets one playthrough.
-        </p>
-        <Link
-          href="/"
-          className="text-sm font-medium text-brand-400 hover:text-brand-300 underline underline-offset-4"
-        >
-          Back to home
-        </Link>
       </div>
     );
   }

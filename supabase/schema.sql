@@ -56,7 +56,10 @@ create table if not exists votes (
 
 -- ────────────────────────────────────────────────────────────
 -- Cap positive votes (right + up combined) per voter.
--- Each voter picks at most 3 favorites across the whole deck.
+-- Each voter picks at most 3 favorites across the whole deck. Voters may
+-- replay and change their votes (upsert by (voter_id, idea_id)); the count
+-- below excludes the row being inserted/updated so flipping the same idea's
+-- direction never trips the cap.
 -- ────────────────────────────────────────────────────────────
 -- SECURITY DEFINER + explicit search_path so the count below is not subject
 -- to anon's RLS on `votes` (anon has no SELECT policy on votes by design).
@@ -73,6 +76,7 @@ begin
     select count(*) into v_existing
     from votes
     where voter_id = new.voter_id
+      and idea_id <> new.idea_id
       and direction in ('right', 'up');
 
     if v_existing >= 3 then
@@ -86,7 +90,7 @@ $$;
 
 drop trigger if exists trg_enforce_positive_vote_budget on votes;
 create trigger trg_enforce_positive_vote_budget
-  before insert on votes
+  before insert or update on votes
   for each row execute function public.enforce_positive_vote_budget();
 
 -- ────────────────────────────────────────────────────────────
@@ -140,6 +144,8 @@ create policy "anon no direct voter insert"
   with check (false);
 
 -- Resolve or create voter by device fingerprint (prevents replay after localStorage clear).
+-- Returns the voter's existing positive votes so the client can seed the
+-- picks-remaining budget and pre-populate the "liked" list when replaying.
 drop function if exists public.get_or_create_voter_by_fp(text, jsonb);
 
 create function public.get_or_create_voter_by_fp(
@@ -153,60 +159,47 @@ set search_path = public
 as $$
 declare
   v_id uuid;
-  v_done boolean;
-  v_positive int := 0;
+  v_positive jsonb := '[]'::jsonb;
 begin
   if p_hash is null or char_length(p_hash) < 32 then
     raise exception 'invalid fingerprint hash';
   end if;
 
-  select id, (playthrough_completed_at is not null)
-  into v_id, v_done
+  select id
+  into v_id
   from voters
   where device_fingerprint_hash = p_hash
   limit 1;
 
-  if v_id is not null then
-    select count(*) into v_positive
-    from votes
-    where voter_id = v_id and direction in ('right', 'up');
-
-    return jsonb_build_object(
-      'id', v_id,
-      'playthrough_completed', v_done,
-      'positive_vote_count', v_positive
-    );
+  if v_id is null then
+    begin
+      insert into voters (metadata, device_fingerprint_hash)
+      values (p_metadata, p_hash)
+      returning id into v_id;
+    exception
+      when unique_violation then
+        select id into v_id
+        from voters
+        where device_fingerprint_hash = p_hash
+        limit 1;
+        if v_id is null then
+          raise;
+        end if;
+    end;
   end if;
 
-  insert into voters (metadata, device_fingerprint_hash)
-  values (p_metadata, p_hash)
-  returning id into v_id;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'idea_id', idea_id,
+    'direction', direction
+  )), '[]'::jsonb)
+  into v_positive
+  from votes
+  where voter_id = v_id and direction in ('right', 'up');
 
   return jsonb_build_object(
     'id', v_id,
-    'playthrough_completed', false,
-    'positive_vote_count', 0
+    'positive_votes', v_positive
   );
-exception
-  when unique_violation then
-    select id, (playthrough_completed_at is not null)
-    into v_id, v_done
-    from voters
-    where device_fingerprint_hash = p_hash
-    limit 1;
-    if v_id is null then
-      raise;
-    end if;
-
-    select count(*) into v_positive
-    from votes
-    where voter_id = v_id and direction in ('right', 'up');
-
-    return jsonb_build_object(
-      'id', v_id,
-      'playthrough_completed', coalesce(v_done, false),
-      'positive_vote_count', v_positive
-    );
 end;
 $$;
 
@@ -244,7 +237,9 @@ $$;
 revoke all on function public.create_voter_session(uuid, text, int, int) from public;
 grant execute on function public.create_voter_session(uuid, text, int, int) to anon;
 
--- Mark session complete; if full deck, lock voter to one playthrough.
+-- Mark session complete. Voters may replay and change their votes, so this
+-- no longer locks the voter; the 3-positive cap is the only registration
+-- limit (enforced by trg_enforce_positive_vote_budget).
 create or replace function public.complete_voter_session(
   p_session_id uuid,
   p_ideas_seen int
@@ -254,26 +249,14 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  v_voter uuid;
-  n_ideas int;
 begin
-  select voter_id into v_voter from sessions where id = p_session_id;
-  if v_voter is null then
-    raise exception 'session not found';
-  end if;
-
   update sessions
   set completed_at = now(),
       ideas_seen = p_ideas_seen
   where id = p_session_id;
 
-  select count(*)::int into n_ideas from ideas;
-
-  if p_ideas_seen >= n_ideas and n_ideas > 0 then
-    update voters
-    set playthrough_completed_at = coalesce(playthrough_completed_at, now())
-    where id = v_voter;
+  if not found then
+    raise exception 'session not found';
   end if;
 end;
 $$;
@@ -288,75 +271,53 @@ create policy "public read ideas"
   using (true);
 
 drop policy if exists "anon insert votes" on votes;
+drop policy if exists "anon update votes" on votes;
+drop policy if exists "anon insert votes until playthrough done" on votes;
 drop policy if exists "anon insert engagements" on engagements;
 drop policy if exists "anon update engagements" on engagements;
+drop policy if exists "anon insert engagements until playthrough done" on engagements;
+drop policy if exists "anon update engagements until playthrough done" on engagements;
 drop policy if exists "anon insert sessions" on sessions;
 drop policy if exists "anon update sessions" on sessions;
+drop policy if exists "anon insert sessions until playthrough done" on sessions;
+drop policy if exists "anon update sessions until playthrough done" on sessions;
 
--- votes: blocked after this voter has finished one full playthrough
-create policy "anon insert votes until playthrough done"
+-- votes: anon may insert and update their own votes (PostgREST upsert path);
+-- the 3-positive cap is enforced server-side by trg_enforce_positive_vote_budget.
+create policy "anon insert votes"
   on votes for insert
   to anon
-  with check (
-    not exists (
-      select 1 from voters v
-      where v.id = voter_id and v.playthrough_completed_at is not null
-    )
-  );
+  with check (true);
 
--- engagements: same gate (insert + upsert update)
-create policy "anon insert engagements until playthrough done"
+create policy "anon update votes"
+  on votes for update
+  to anon
+  using (true)
+  with check (true);
+
+-- engagements: insert + upsert update (no playthrough gate; voters may replay)
+create policy "anon insert engagements"
   on engagements for insert
   to anon
-  with check (
-    not exists (
-      select 1 from voters v
-      where v.id = voter_id and v.playthrough_completed_at is not null
-    )
-  );
+  with check (true);
 
-create policy "anon update engagements until playthrough done"
+create policy "anon update engagements"
   on engagements for update
   to anon
-  using (
-    not exists (
-      select 1 from voters v
-      where v.id = engagements.voter_id and v.playthrough_completed_at is not null
-    )
-  )
-  with check (
-    not exists (
-      select 1 from voters v
-      where v.id = engagements.voter_id and v.playthrough_completed_at is not null
-    )
-  );
+  using (true)
+  with check (true);
 
--- sessions: no new rounds after playthrough completed (complete_voter_session uses definer)
-create policy "anon insert sessions until playthrough done"
+-- sessions: insert + update (complete_voter_session uses security definer)
+create policy "anon insert sessions"
   on sessions for insert
   to anon
-  with check (
-    not exists (
-      select 1 from voters v
-      where v.id = voter_id and v.playthrough_completed_at is not null
-    )
-  );
+  with check (true);
 
-create policy "anon update sessions until playthrough done"
+create policy "anon update sessions"
   on sessions for update
   to anon
-  using (
-    not exists (
-      select 1 from voters v
-      where v.id = sessions.voter_id and v.playthrough_completed_at is not null
-    )
-  )
-  with check (
-    not exists (
-      select 1 from voters v
-      where v.id = sessions.voter_id and v.playthrough_completed_at is not null
-    )
-  );
+  using (true)
+  with check (true);
 
 -- ────────────────────────────────────────────────────────────
 -- Seed ideas (replace poster_url / video_url after upload)

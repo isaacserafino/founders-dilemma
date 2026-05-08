@@ -40,17 +40,27 @@ async function retryOperation(
 
 // ─── Votes ────────────────────────────────────────────────────────────────────
 
+/**
+ * Record (or change) a voter's swipe on a single idea. Uses upsert by
+ * (voter_id, idea_id) so a voter may replay the deck and overwrite a
+ * prior swipe; the 3-positive cap is enforced server-side via
+ * trg_enforce_positive_vote_budget.
+ */
 export async function recordVote(
   voterId: string,
   ideaId: string,
   direction: SwipeDirection
 ): Promise<boolean> {
-  return retryOperation("vote insert", async () =>
-    supabase.from("votes").insert({
-      voter_id: voterId,
-      idea_id: ideaId,
-      direction,
-    })
+  return retryOperation("vote upsert", async () =>
+    supabase.from("votes").upsert(
+      {
+        voter_id: voterId,
+        idea_id: ideaId,
+        direction,
+        swiped_at: new Date().toISOString(),
+      },
+      { onConflict: "voter_id,idea_id" }
+    )
   );
 }
 

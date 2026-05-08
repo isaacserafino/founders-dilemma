@@ -7,47 +7,58 @@ import { getDeviceFingerprintHash } from "./deviceFingerprint";
 
 const VOTER_KEY = "fd_voter_id";
 
+/** A previously-recorded positive vote returned from the bootstrap RPC. */
+export interface PositiveVote {
+  ideaId: string;
+  direction: "right" | "up";
+}
+
 export type VoterBootstrap = {
   voterId: string;
-  /** True after this voter has finished a full deck (server-side). */
-  playthroughCompleted: boolean;
   /**
-   * Positive votes (right + up) this voter has already cast in their current
-   * playthrough. Used to seed the picks-remaining budget so a resumed session
-   * doesn't grant a fresh allotment.
+   * Positive votes (right + up) this voter has already cast. Used to seed
+   * the picks-remaining budget and pre-populate the "liked" list when the
+   * voter replays the deck. The 3-positive cap is enforced server-side
+   * regardless of this list.
    */
-  positiveVoteCount: number;
+  positiveVotes: PositiveVote[];
 };
 
 type RpcVoterRow = {
   id: string;
-  playthrough_completed?: boolean;
-  positive_vote_count?: number;
+  positive_votes: PositiveVote[];
 };
+
+function parsePositiveVotes(raw: unknown): PositiveVote[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PositiveVote[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const ideaId = o.idea_id;
+    const direction = o.direction;
+    if (typeof ideaId !== "string") continue;
+    if (direction !== "right" && direction !== "up") continue;
+    out.push({ ideaId, direction });
+  }
+  return out;
+}
 
 function parseRpcPayload(raw: unknown): RpcVoterRow | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const id = o.id;
   if (typeof id !== "string") return null;
-  const rawCount = o.positive_vote_count;
-  const positiveCount =
-    typeof rawCount === "number" && Number.isFinite(rawCount) && rawCount >= 0
-      ? Math.floor(rawCount)
-      : 0;
   return {
     id,
-    playthrough_completed:
-      typeof o.playthrough_completed === "boolean"
-        ? o.playthrough_completed
-        : Boolean(o.playthrough_completed),
-    positive_vote_count: positiveCount,
+    positive_votes: parsePositiveVotes(o.positive_votes),
   };
 }
 
 /**
- * Returns voter id (bound to device fingerprint) and whether they already
- * finished one full playthrough.
+ * Returns the voter id (bound to device fingerprint) and the positive votes
+ * the voter has previously registered. Voters may replay and change votes;
+ * the server caps total positive votes at 3.
  */
 export async function getOrCreateVoter(): Promise<VoterBootstrap> {
   let fp: string;
@@ -74,8 +85,7 @@ export async function getOrCreateVoter(): Promise<VoterBootstrap> {
     localStorage.setItem(VOTER_KEY, row.id);
     return {
       voterId: row.id,
-      playthroughCompleted: Boolean(row.playthrough_completed),
-      positiveVoteCount: row.positive_vote_count ?? 0,
+      positiveVotes: row.positive_votes,
     };
   }
 
@@ -85,15 +95,15 @@ export async function getOrCreateVoter(): Promise<VoterBootstrap> {
 
   const existing = localStorage.getItem(VOTER_KEY);
   if (existing) {
-    return { voterId: existing, playthroughCompleted: false, positiveVoteCount: 0 };
+    return { voterId: existing, positiveVotes: [] };
   }
 
   const fallback = crypto.randomUUID();
   localStorage.setItem(VOTER_KEY, fallback);
-  return { voterId: fallback, playthroughCompleted: false, positiveVoteCount: 0 };
+  return { voterId: fallback, positiveVotes: [] };
 }
 
-/** @deprecated Prefer getOrCreateVoter when you need playthrough state. */
+/** @deprecated Prefer getOrCreateVoter when you need prior-vote state. */
 export async function getOrCreateVoterId(): Promise<string> {
   const v = await getOrCreateVoter();
   return v.voterId;
