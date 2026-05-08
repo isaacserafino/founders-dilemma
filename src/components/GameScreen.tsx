@@ -286,7 +286,7 @@ export default function GameScreen() {
   }
 
   return (
-    <main className="relative flex flex-col min-h-dvh bg-[#0a0a0f] overflow-hidden">
+    <main className="relative flex flex-col h-dvh bg-[#0a0a0f] overflow-hidden">
       {/* Top bar */}
       <header className="flex items-center justify-between px-5 pt-12 pb-4 shrink-0">
         <span className="text-sm font-semibold text-white/40 tracking-wide uppercase">
@@ -300,7 +300,7 @@ export default function GameScreen() {
       </header>
 
       {/* Card area */}
-      <div className="flex-1 relative px-5 pb-16">
+      <div className="flex-1 min-h-0 relative px-5 pb-16 flex flex-col">
         <CardStack
           ideas={ideas}
           picksRemaining={picksRemaining}

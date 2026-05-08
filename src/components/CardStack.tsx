@@ -44,7 +44,7 @@ export default function CardStack({
   if (remaining.length === 0) return null;
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full flex-1 min-h-0">
       <AnimatePresence>
         {visible.map((idea, stackIndex) => (
           <SwipeCard

@@ -128,13 +128,14 @@ export default function SwipeCard({
         y.set(info.offset.y);
       }}
     >
-      <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl">
+      <div className="absolute inset-0 rounded-3xl overflow-hidden shadow-2xl">
         {/* Poster image */}
         {idea.poster_url ? (
           <Image
             src={idea.poster_url}
             alt={idea.title}
             fill
+            sizes="(max-width: 480px) 100vw, 420px"
             className="object-cover"
             priority={stackIndex === 0}
             draggable={false}
