@@ -114,70 +114,81 @@ export default function VideoDrawer({ idea, onClose }: VideoDrawerProps) {
             onClick={handleClose}
           />
 
-          {/* Sheet */}
+          {/* Centering wrapper — fixed, full-viewport flex container so the
+              modal sits in the visual center both horizontally and vertically.
+              `pointer-events-none` lets clicks fall through to the backdrop
+              everywhere except on the modal itself (which re-enables them). */}
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 flex flex-col bg-[#12121a] rounded-t-3xl shadow-2xl max-h-[90dvh] overflow-hidden"
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
           >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-white/20" />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-start justify-between px-5 pt-2 pb-4 shrink-0">
-              <div className="flex flex-col gap-0.5 flex-1 pr-4">
-                <h3 className="text-xl font-bold leading-tight">{idea.title}</h3>
-                <p className="text-sm text-white/60">{idea.tagline}</p>
+            {/* Modal — capped at the app's mobile-first width so the
+                aspect-video player doesn't inflate on desktop. */}
+            <motion.div
+              className="pointer-events-auto w-full max-w-[420px] max-h-[90dvh] flex flex-col bg-[#12121a] rounded-3xl shadow-2xl overflow-hidden"
+              initial={{ y: 40, scale: 0.96 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 40, scale: 0.96 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between px-5 pt-5 pb-4 shrink-0">
+                <div className="flex flex-col gap-0.5 flex-1 pr-4">
+                  <h3 className="text-xl font-bold leading-tight">{idea.title}</h3>
+                  <p className="text-sm text-white/60">{idea.tagline}</p>
+                </div>
+                <button
+                  onClick={handleClose}
+                  className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-lg shrink-0"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                onClick={handleClose}
-                className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-lg shrink-0"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Video */}
-            <div className="relative w-full bg-black aspect-video shrink-0">
-              {idea.video_url ? (
-                <video
-                  ref={videoRef}
-                  src={idea.video_url}
-                  className="w-full h-full object-contain"
-                  controls
-                  playsInline
-                  autoPlay
-                  preload="metadata"
-                  poster={idea.poster_url ?? undefined}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white/30 text-sm">
-                  No pitch video yet
+              {/* Video — portrait 9:16, capped at 50dvh tall so the modal
+                  (header + video + description + CTA) always fits in
+                  90dvh. `object-contain` keeps the video's true aspect; the
+                  container letterboxes horizontally on wider modals. */}
+              <div className="relative w-full bg-black aspect-[9/16] max-h-[50dvh] shrink-0">
+                {idea.video_url ? (
+                  <video
+                    ref={videoRef}
+                    src={idea.video_url}
+                    className="w-full h-full object-contain"
+                    controls
+                    playsInline
+                    autoPlay
+                    preload="metadata"
+                    poster={idea.poster_url ?? undefined}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white/30 text-sm">
+                    No pitch video yet
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              {idea.description && (
+                <div className="px-5 py-5 overflow-y-auto">
+                  <p className="text-sm text-white/70 leading-relaxed">{idea.description}</p>
                 </div>
               )}
-            </div>
 
-            {/* Description */}
-            {idea.description && (
-              <div className="px-5 py-5 overflow-y-auto">
-                <p className="text-sm text-white/70 leading-relaxed">{idea.description}</p>
+              {/* Bottom CTA */}
+              <div className="px-5 pb-5 pt-3 shrink-0 border-t border-white/5">
+                <button
+                  onClick={handleClose}
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 font-semibold text-base"
+                >
+                  Got it — back to swiping
+                </button>
               </div>
-            )}
-
-            {/* Bottom CTA */}
-            <div className="px-5 pb-8 pt-3 shrink-0 border-t border-white/5">
-              <button
-                onClick={handleClose}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 font-semibold text-base"
-              >
-                Got it — back to swiping
-              </button>
-            </div>
+            </motion.div>
           </motion.div>
         </>
       )}
