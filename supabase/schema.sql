@@ -362,11 +362,11 @@ create policy "anon update sessions until playthrough done"
 -- Seed ideas (replace poster_url / video_url after upload)
 -- ────────────────────────────────────────────────────────────
 insert into ideas (slug, title, tagline, description, sort_order) values
-  ('madman',        'Madman',     'Real coding for everyone',    'An AI assistant that sits beside every founder, surfaces blind spots, and drafts options before you ask.', 1),
-  ('spoons',        'Spoons',     'Gamified wellbeing app',               'A structured conversation tool that guides co-founders through the equity-split talk with data and precedent.', 2),
-  ('market-bot',    'Market-bot', 'Marketing cofounder', 'Real-time signal aggregation that flags leading indicators your core metrics are about to shift.', 3),
-  ('unbabble',      'Unbabble',   'Frontier Bible translation',             'Pulls your metrics, drafts narrative slides, and formats them to your board template — in minutes.', 4),
-  ('meeting-place', 'The Meeting Place',    'Discipleship app',            'Connects to your bank and payroll so you always know exactly how many months of runway remain.', 5),
-  ('delta-ai',      'Delta AI',   'Self-improving software',              'A matchmaking layer for technical and operator co-founders based on work-style and value alignment.', 6),
-  ('oi',            'Organic Intelligence', 'Verified job applicants',     'Scenario planner that shows every stakeholder''s payout across acquisition, IPO, and secondary paths.', 7)
+  ('madman',        'Madman',     'Real coding for everyone',   'A digital scientist in a laboratory environment that follows strict recipes, repeats processes, and makes autonomous choices to perform high-level engineering work.', 1),
+  ('spoons',        'Spoons',     'Gamified wellbeing app',     'An addictive, high-engagement game that turns basic hygiene, hydration, and diet into a quest, helping neurodivergent founders manage energy through customizable daily wins.', 2),
+  ('market-bot',    'Market-bot', 'Marketing cofounder',        'The non-technical bridge for technical founders; a marketing-heavy co-pilot that handles growth, soft skills, and outreach so you can stay focused on the code.', 3),
+  ('unbabble',      'Unbabble',   'Frontier Bible translation', 'A "No Human In The Loop" (NHITL) engine designed for rapid-fire, high-accuracy scripture translation using frontier AI models without human intervention.', 4),
+  ('meeting-place', 'The Meeting Place',    'Discipleship app', 'A comprehensive community hub for fellowship and evangelism, focusing on practical discipleship like food distribution, clothing, and ride-sharing.', 5),
+  ('delta-ai',      'Delta AI',   'Self-improving software',    'An AI development tool that creates new skills for a universal shared library, allowing the tool''s collective intelligence and ability to improve progressively with every use.', 6),
+  ('oi',            'Organic Intelligence', 'Verified job applicants', 'A platform solving the fake resume crisis by providing verified human workers through institutional verification, employer vetting, and rigorous identity screening.', 7);
 on conflict (slug) do nothing;
