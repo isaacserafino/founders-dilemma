@@ -305,11 +305,11 @@ create policy "anon update sessions until playthrough done"
 -- Seed ideas (replace poster_url / video_url after upload)
 -- ────────────────────────────────────────────────────────────
 insert into ideas (slug, title, tagline, description, sort_order) values
-  ('ai-copilot',    'AI Copilot',        'Your second brain for every decision',    'An AI assistant that sits beside every founder, surfaces blind spots, and drafts options before you ask.', 1),
-  ('equity-split',  'Equity Split',      'Fair shares, from day one',               'A structured conversation tool that guides co-founders through the equity-split talk with data and precedent.', 2),
-  ('pivot-radar',   'Pivot Radar',       'Know when to turn before it is too late', 'Real-time signal aggregation that flags leading indicators your core metrics are about to shift.', 3),
-  ('board-deck',    'Board Deck AI',     'Decks that write themselves',             'Pulls your metrics, drafts narrative slides, and formats them to your board template — in minutes.', 4),
-  ('burn-lens',     'Burn Lens',         'See your runway in real time',            'Connects to your bank and payroll so you always know exactly how many months of runway remain.', 5),
-  ('cofounder-fit', 'Co-founder Fit',    'Find the yin to your yang',              'A matchmaking layer for technical and operator co-founders based on work-style and value alignment.', 6),
-  ('exit-sim',      'Exit Simulator',    'Model the outcome before you commit',     'Scenario planner that shows every stakeholder''s payout across acquisition, IPO, and secondary paths.', 7)
+  ('madman',        'Madman',     'Real coding for everyone',    'An AI assistant that sits beside every founder, surfaces blind spots, and drafts options before you ask.', 1),
+  ('spoons',        'Spoons',     'Gamified wellbeing app',               'A structured conversation tool that guides co-founders through the equity-split talk with data and precedent.', 2),
+  ('market-bot',    'Market-bot', 'Marketing cofounder', 'Real-time signal aggregation that flags leading indicators your core metrics are about to shift.', 3),
+  ('unbabble',      'Unbabble',   'Frontier Bible translation',             'Pulls your metrics, drafts narrative slides, and formats them to your board template — in minutes.', 4),
+  ('meeting-place', 'The Meeting Place',    'Discipleship app',            'Connects to your bank and payroll so you always know exactly how many months of runway remain.', 5),
+  ('delta-ai',      'Delta AI',   'Self-improving software',              'A matchmaking layer for technical and operator co-founders based on work-style and value alignment.', 6),
+  ('oi',            'Organic Intelligence', 'Verified job applicants',     'Scenario planner that shows every stakeholder''s payout across acquisition, IPO, and secondary paths.', 7)
 on conflict (slug) do nothing;
