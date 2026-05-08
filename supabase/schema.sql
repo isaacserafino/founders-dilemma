@@ -264,6 +264,51 @@ $$;
 revoke all on function public.complete_voter_session(uuid, int) from public;
 grant execute on function public.complete_voter_session(uuid, int) to anon;
 
+-- ────────────────────────────────────────────────────────────
+-- Additive engagement upsert.
+-- Each delta row {idea_id, watch_seconds, drawer_opens} is added to the
+-- voter's existing engagement row (or inserted if absent), so engagement
+-- accumulates across replays instead of being overwritten by the latest
+-- session's totals. Anon writes only flow through this RPC; the table
+-- itself has no direct anon insert/update policies.
+-- ────────────────────────────────────────────────────────────
+create or replace function public.add_engagement_deltas(
+  p_voter_id uuid,
+  p_deltas jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if jsonb_typeof(p_deltas) <> 'array' then
+    raise exception 'p_deltas must be a JSON array';
+  end if;
+
+  insert into engagements (voter_id, idea_id, watch_seconds, drawer_opens, updated_at)
+  select
+    p_voter_id,
+    (d->>'idea_id')::uuid,
+    coalesce((d->>'watch_seconds')::numeric, 0),
+    coalesce((d->>'drawer_opens')::int, 0),
+    now()
+  from jsonb_array_elements(p_deltas) as d
+  where (d->>'idea_id') is not null
+    and (
+      coalesce((d->>'watch_seconds')::numeric, 0) > 0
+      or coalesce((d->>'drawer_opens')::int, 0) > 0
+    )
+  on conflict (voter_id, idea_id) do update
+    set watch_seconds = engagements.watch_seconds + excluded.watch_seconds,
+        drawer_opens  = engagements.drawer_opens  + excluded.drawer_opens,
+        updated_at    = now();
+end;
+$$;
+
+revoke all on function public.add_engagement_deltas(uuid, jsonb) from public;
+grant execute on function public.add_engagement_deltas(uuid, jsonb) to anon;
+
 -- ideas: anyone can read (cards need title, poster, video)
 create policy "public read ideas"
   on ideas for select
@@ -295,17 +340,9 @@ create policy "anon update votes"
   using (true)
   with check (true);
 
--- engagements: insert + upsert update (no playthrough gate; voters may replay)
-create policy "anon insert engagements"
-  on engagements for insert
-  to anon
-  with check (true);
-
-create policy "anon update engagements"
-  on engagements for update
-  to anon
-  using (true)
-  with check (true);
+-- engagements: writes flow exclusively through add_engagement_deltas
+-- (security definer), so the table has no anon insert/update policy.
+-- This guarantees deltas are added (not overwritten) on replay.
 
 -- sessions: insert + update (complete_voter_session uses security definer)
 create policy "anon insert sessions"

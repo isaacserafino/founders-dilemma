@@ -102,10 +102,14 @@ export default function GameScreen() {
   }, [pendingSyncCount]);
 
   // Stable identity for add/removeEventListener (avoids orphaned listeners if deps churn).
+  // Sends the unflushed deltas via keepalive fetch and clears the accumulator
+  // so later closes don't double-count drawer opens already reported here.
   const visibilityHiddenFlushRef = useRef(() => {
     const voterId = voterIdRef.current;
     if (!voterId) return;
-    flushEngagementsOnExit(voterId, Array.from(accumsRef.current.values()));
+    const deltas = Array.from(accumsRef.current.values());
+    accumsRef.current.clear();
+    flushEngagementsOnExit(voterId, deltas);
   });
 
   // ── Bootstrap ────────────────────────────────────────────────────────────────
@@ -226,10 +230,11 @@ export default function GameScreen() {
   );
 
   // ── Drawer open ──────────────────────────────────────────────────────────
+  // The accumulator now holds *unflushed deltas*. The server adds them to
+  // any existing engagement row, so totals accumulate across replays.
   const handleOpenDrawer = useCallback((idea: Idea) => {
     setDrawerIdea(idea);
 
-    // Increment drawer_opens for this idea
     const existing = accumsRef.current.get(idea.id) ?? {
       ideaId: idea.id,
       watchSeconds: 0,
@@ -251,21 +256,23 @@ export default function GameScreen() {
 
       const voterId = voterIdRef.current;
 
-      // Update accumulator
       const existing = accumsRef.current.get(idea.id) ?? {
         ideaId: idea.id,
         watchSeconds: 0,
         drawerOpens: 0,
       };
-      const updated = {
-        ...existing,
+      const flushable = {
+        ideaId: idea.id,
         watchSeconds: existing.watchSeconds + watchSeconds,
+        drawerOpens: existing.drawerOpens,
       };
-      accumsRef.current.set(idea.id, updated);
 
-      // Flush directly (drawer close is a natural write point)
+      // Clear before flush: subsequent opens/watches start a fresh delta and
+      // won't be double-counted alongside this in-flight RPC call.
+      accumsRef.current.delete(idea.id);
+
       if (voterId) {
-        trackSyncPromise(flushEngagement(voterId, updated));
+        trackSyncPromise(flushEngagement(voterId, flushable));
       }
     },
     [drawerIdea, trackSyncPromise]
@@ -278,6 +285,7 @@ export default function GameScreen() {
 
     if (voterId) {
       const accums = Array.from(accumsRef.current.values());
+      accumsRef.current.clear();
       await Promise.all(accums.map((a) => flushEngagement(voterId, a)));
     }
 

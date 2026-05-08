@@ -66,31 +66,45 @@ export async function recordVote(
 
 // ─── Engagements ──────────────────────────────────────────────────────────────
 
-/** Upsert engagement row for a single idea. */
+interface EngagementDeltaPayload {
+  idea_id: string;
+  watch_seconds: number;
+  drawer_opens: number;
+}
+
+function toDeltaPayload(accum: EngagementAccum): EngagementDeltaPayload {
+  return {
+    idea_id: accum.ideaId,
+    watch_seconds: accum.watchSeconds,
+    drawer_opens: accum.drawerOpens,
+  };
+}
+
+/**
+ * Add a single engagement delta to the voter's running totals via the
+ * additive `add_engagement_deltas` RPC. The accumulator passed here must
+ * represent the *unflushed* delta since the last flush — the server adds it
+ * to the existing row so totals accumulate across replays.
+ */
 export async function flushEngagement(
   voterId: string,
   accum: EngagementAccum
 ): Promise<boolean> {
   if (accum.watchSeconds === 0 && accum.drawerOpens === 0) return true;
 
-  return retryOperation("engagement upsert", async () =>
-    supabase.from("engagements").upsert(
-      {
-        voter_id: voterId,
-        idea_id: accum.ideaId,
-        watch_seconds: accum.watchSeconds,
-        drawer_opens: accum.drawerOpens,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "voter_id,idea_id" }
-    )
+  return retryOperation("engagement delta", async () =>
+    supabase.rpc("add_engagement_deltas", {
+      p_voter_id: voterId,
+      p_deltas: [toDeltaPayload(accum)],
+    })
   );
 }
 
 /**
- * Best-effort flush used during page lifecycle transitions. Uses `fetch` with
- * `keepalive` (not `sendBeacon`) so we can send Supabase REST auth headers and
- * upsert `Prefer`; `sendBeacon` cannot set custom headers.
+ * Best-effort delta flush used during page lifecycle transitions. Uses
+ * `fetch` with `keepalive` (not `sendBeacon`) so we can send Supabase REST
+ * auth headers; `sendBeacon` cannot set custom headers. Routed through the
+ * additive RPC so values accumulate rather than overwrite.
  */
 export function flushEngagementsOnExit(
   voterId: string,
@@ -100,20 +114,17 @@ export function flushEngagementsOnExit(
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) return;
 
-  const rows = accums
+  const deltas = accums
     .filter((a) => a.watchSeconds > 0 || a.drawerOpens > 0)
-    .map((a) => ({
-      voter_id: voterId,
-      idea_id: a.ideaId,
-      watch_seconds: a.watchSeconds,
-      drawer_opens: a.drawerOpens,
-      updated_at: new Date().toISOString(),
-    }));
+    .map(toDeltaPayload);
 
-  if (rows.length === 0) return;
+  if (deltas.length === 0) return;
 
-  const url = `${supabaseUrl}/rest/v1/engagements?on_conflict=voter_id,idea_id`;
-  const payload = JSON.stringify(rows);
+  const url = `${supabaseUrl}/rest/v1/rpc/add_engagement_deltas`;
+  const payload = JSON.stringify({
+    p_voter_id: voterId,
+    p_deltas: deltas,
+  });
 
   void fetch(url, {
     method: "POST",
@@ -122,7 +133,6 @@ export function flushEngagementsOnExit(
       apikey: anonKey,
       Authorization: `Bearer ${anonKey}`,
       "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates",
     },
     body: payload,
   });
