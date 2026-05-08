@@ -42,7 +42,7 @@ export default function LandingScreen() {
             Founder&apos;s
             <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-purple-300">
-              Dilemma
+              Dilemma&trade;
             </span>
           </h1>
           <p className="text-base text-white/60 leading-relaxed">

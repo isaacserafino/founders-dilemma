@@ -16,10 +16,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Founder's Dilemma",
+  title: "Founder's Dilemma™",
   description: "Swipe on the ideas that could define your company.",
   openGraph: {
-    title: "Founder's Dilemma",
+    title: "Founder's Dilemma™",
     description: "Swipe on the ideas that could define your company.",
     type: "website",
   },
