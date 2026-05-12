@@ -5,6 +5,7 @@
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { POSITIVE_VOTE_BUDGET } from "@/lib/constants";
+import BrandFooter from "./BrandFooter";
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -87,15 +88,7 @@ export default function LandingScreen() {
         </p>
 
         <p className="text-xs text-white/20">
-          Free software —{" "}
-          <a
-            href="https://github.com/isaacserafino/founders-dilemma"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-2 hover:text-white/40 transition-colors"
-          >
-            source (AGPL-3.0)
-          </a>
+          <BrandFooter />
         </p>
       </motion.div>
     </main>
