@@ -343,6 +343,7 @@ export default function GameScreen() {
 
       {/* Action hint bar */}
       <footer className="flex justify-around items-center px-8 pb-10 pt-2 shrink-0">
+        Swipe card above to vote:
         <HintButton label="Pass" emoji="👈" color="text-red-400" />
         <HintButton
           label="Love"
